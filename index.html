@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D 井字遊戲</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+        .game-container {
+            text-align: center;
+        }
+        .board {
+            display: grid;
+            grid-template-columns: repeat(3, 100px);
+            grid-gap: 5px;
+            margin-bottom: 20px;
+        }
+        .cell {
+            width: 100px;
+            height: 100px;
+            background-color: #fff;
+            border: 1px solid #000;
+            font-size: 40px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            position: relative;
+        }
+        .cell::after {
+            content: attr(data-layer);
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            font-size: 12px;
+            color: #888;
+        }
+        .X { color: #ff0000; }
+        .O { color: #0000ff; }
+        #gameEndModal {
+            display: none;
+            position: fixed;
+            z-index: 1;
+            left: 0:
+            top: 0:
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.4);
+            overflow-y: auto;
+        }
+        .modal-content {
+            background-color: #fefefe;
+            margin: 15% auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%;
+            max-width: 500px;
+        }
+        .modal-content table {
+            border-collapse: collapse;
+            margin: 10px auto;
+        }
+        .modal-content td {
+            width: 100px;
+            height: 100px;
+            border: 1px solid #000;
+            text-align: center;
+            font-size: 40px;
+        }
+        .cell.win {
+            background-color: #ffff99;
+        }
+        #lineCounts {
+            margin-top: 10px;
+            font-size: 18px;
+        }
+      #bottomSpace {
+            height: 50px;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <h1>3D 井字遊戲</h1>
+        <div id="instructions" style="text-align: left;">
+            <p>遊戲規則：</p>
+            <ul>
+                <li>玩家依次在3層3x3的棋盤上放置 X 或 O。</li>
+                <li>任何水平、垂直或對角線上有3個相同標記的玩家將得到一條連線。</li>
+                <li>達到3條連線的玩家即獲勝。</li>
+                <li>如果所有格子都被填滿而沒有玩家達到3條連線，則平局。</li>
+            </ul>
+            <button onclick="startGame()">開始遊戲</button>
+        </div>
+        <div id="gameBoard" style="display: none;">
+            <div id="board" class="board"></div>
+            <div id="status"></div>
+            <div id="lineCounts">
+                玩家 X 連線數: <span id="xLines">0</span><br>
+                玩家 O 連線數: <span id="oLines">0</span>
+            </div>
+          <button onclick="exitGame()">退出遊戲</button>
+          <div id="bottomSpace"></div>
+        </div>
+    </div>
+
+    <div id="gameEndModal">
+        <div class="modal-content">
+            <h2 id="modalMessage"></h2>
+            <div id="finalBoards"></div>
+            <button onclick="resetGame()">重新開始</button>
+        </div>
+    </div>
+
+    <script>
+        let boards = [];
+        let currentPlayer = 'X';
+        const statusDisplay = document.getElementById('status');
+        const modal = document.getElementById('gameEndModal');
+        const modalMessage = document.getElementById('modalMessage');
+        const finalBoards = document.getElementById('finalBoards');
+        const xLinesDisplay = document.getElementById('xLines');
+        const oLinesDisplay = document.getElementById('oLines');
+        let xLines = 0;
+        let oLines = 0;
+        let winningLines = [];
+
+        function startGame() {
+            document.getElementById('instructions').style.display = 'none';
+            document.getElementById('gameBoard').style.display = 'block';
+            resetGame();
+          }
+
+        function exitGame() {
+            document.getElementById('gameBoard').style.display = 'none';
+            document.getElementById('instructions').style.display = 'block';
+            resetGame(); // 增加這一行，確保退出遊戲後再次開始遊戲時內容重新計算
+          }
+      
+        function initializeBoards() {
+            boards = [
+                [['', '', ''], ['', '', ''], ['', '', '']],
+                [['', '', ''], ['', '', ''], ['', '', '']],
+                [['', '', ''], ['', '', ''], ['', '', '']]
+            ];
+        }
+
+        function createBoard() {
+            const board = document.getElementById('board');
+            board.innerHTML = '';
+            for (let i = 0; i < 3; i++) {
+                for (let j = 0; j < 3; j++) {
+                    const cell = document.createElement('div');
+                    cell.classList.add('cell');
+                    cell.dataset.row = i;
+                    cell.dataset.col = j;
+                    cell.dataset.layer = '0';
+                    cell.addEventListener('click', handleCellClick);
+                    board.appendChild(cell);
+                }
+            }
+            updateBoardDisplay();
+        }
+
+        function updateBoardDisplay() {
+              const cells = document.getElementsByClassName('cell');
+              for (let i = 0; i < cells.length; i++) {
+                  const row = parseInt(cells[i].dataset.row);
+                  const col = parseInt(cells[i].dataset.col);
+                  let topLayer = 2;
+                  while (topLayer >= 0 && boards[topLayer][row][col] === '') {
+                      topLayer--;
+                  }
+                  if (topLayer === -1) {
+                      cells[i].textContent = '';
+                      cells[i].className = 'cell';
+                      cells[i].dataset.layer = '0';
+                  } else {
+                      cells[i].textContent = boards[topLayer][row][col];
+                      cells[i].className = `cell ${boards[topLayer][row][col]}`;
+                      cells[i].dataset.layer = (topLayer + 1).toString();
+                  }
+              }
+        }
+
+        function handleCellClick(event) {
+              const row = parseInt(event.target.dataset.row);
+              const col = parseInt(event.target.dataset.col);
+              const currentLayer = parseInt(event.target.dataset.layer) - 1;
+
+              if (currentLayer < 2 && (currentLayer === -1 || boards[currentLayer][row][col] !== '')) {
+                  const newLayer = currentLayer + 1;
+                  boards[newLayer][row][col] = currentPlayer;
+                  updateBoardDisplay();
+
+                  const newLines = checkNewLines(newLayer, row, col);
+                    if (newLines > 0) {
+                        if (currentPlayer === 'X') {
+                            xLines += newLines;
+                            xLinesDisplay.textContent = xLines;
+                        } else {
+                            oLines += newLines;
+                            oLinesDisplay.textContent = oLines;
+                        }
+                    }
+
+                  if (xLines >= 3 || oLines >= 3) {
+                        endGame(`玩家 ${currentPlayer} 獲勝！`);
+                    } else if (checkDraw()) {
+                        endGame('平局！');
+                    } else {
+                        currentPlayer = currentPlayer === 'X' ? 'O' : 'X';
+                        statusDisplay.textContent = `輪到玩家 ${currentPlayer}`;
+                    }
+              }
+        }
+      
+        let allWinningLines = []; // 全域變數來儲存所有贏線
+
+        function checkNewLines(layer, row, col) {
+              let newLines = 0;
+
+              function addLine(line) {
+                const lineStr = JSON.stringify(line);
+                if (!allWinningLines.some(existingLine => JSON.stringify(existingLine) === lineStr)) {
+                  newLines++;
+                  winningLines.push(line);
+                  allWinningLines.push(line);
+                }
+              }
+
+              // 檢查水平
+              if (boards[layer][row][0] === currentPlayer && 
+                  boards[layer][row][1] === currentPlayer && 
+                  boards[layer][row][2] === currentPlayer) {
+                addLine([[layer, row, 0], [layer, row, 1], [layer, row, 2]]);
+              }
+
+              // 檢查垂直
+              if (boards[layer][0][col] === currentPlayer && 
+                  boards[layer][1][col] === currentPlayer && 
+                  boards[layer][2][col] === currentPlayer) {
+                addLine([[layer, 0, col], [layer, 1, col], [layer, 2, col]]);
+              }
+
+              // 檢查對角線
+              if (boards[layer][0][0] === currentPlayer && 
+                  boards[layer][1][1] === currentPlayer && 
+                  boards[layer][2][2] === currentPlayer) {
+                addLine([[layer, 0, 0], [layer, 1, 1], [layer, 2, 2]]);
+              }
+              if (boards[layer][0][2] === currentPlayer && 
+                  boards[layer][1][1] === currentPlayer && 
+                  boards[layer][2][0] === currentPlayer) {
+                addLine([[layer, 0, 2], [layer, 1, 1], [layer, 2, 0]]);
+              }
+
+              // 檢查跨層水平
+              if (boards[0][row][col] === currentPlayer && 
+                  boards[1][row][col] === currentPlayer && 
+                  boards[2][row][col] === currentPlayer) {
+                addLine([[0, row, col], [1, row, col], [2, row, col]]);
+              }
+
+              // 檢查跨層垂直
+              if (boards[0][row][0] === currentPlayer && 
+                  boards[1][row][1] === currentPlayer && 
+                  boards[2][row][2] === currentPlayer) {
+                addLine([[0, row, 0], [1, row, 1], [2, row, 2]]);
+              }
+              if (boards[0][row][2] === currentPlayer && 
+                  boards[1][row][1] === currentPlayer && 
+                  boards[2][row][0] === currentPlayer) {
+                addLine([[0, row, 2], [1, row, 1], [2, row, 0]]);
+              }
+
+              // 檢查跨層對角線
+              if (boards[0][0][col] === currentPlayer && 
+                  boards[1][1][col] === currentPlayer && 
+                  boards[2][2][col] === currentPlayer) {
+                addLine([[0, 0, col], [1, 1, col], [2, 2, col]]);
+              }
+              if (boards[0][2][col] === currentPlayer && 
+                  boards[1][1][col] === currentPlayer && 
+                  boards[2][0][col] === currentPlayer) {
+                addLine([[0, 2, col], [1, 1, col], [2, 0, col]]);
+              }
+
+              // 檢查跨層斜對角線
+              if (boards[0][0][0] === currentPlayer && 
+                  boards[1][1][1] === currentPlayer && 
+                  boards[2][2][2] === currentPlayer) {
+                addLine([[0, 0, 0], [1, 1, 1], [2, 2, 2]]);
+              }
+              if (boards[0][0][2] === currentPlayer && 
+                  boards[1][1][1] === currentPlayer && 
+                  boards[2][2][0] === currentPlayer) {
+                addLine([[0, 0, 2], [1, 1, 1], [2, 2, 0]]);
+              }
+              if (boards[0][2][0] === currentPlayer && 
+                  boards[1][1][1] === currentPlayer && 
+                  boards[2][0][2] === currentPlayer) {
+                addLine([[0, 2, 0], [1, 1, 1], [2, 0, 2]]);
+              }
+              if (boards[0][2][2] === currentPlayer && 
+                  boards[1][1][1] === currentPlayer && 
+                  boards[2][0][0] === currentPlayer) {
+                addLine([[0, 2, 2], [1, 1, 1], [2, 0, 0]]);
+              }
+
+              return newLines;
+        }
+
+        function checkDraw() {
+              return boards.every(layer => layer.every(row => row.every(cell => cell !== '')));
+        }
+
+        function endGame(message) {
+              modalMessage.textContent = `${message} 玩家 X 連線數: ${xLines}, 玩家 O 連線數: ${oLines}`;
+              finalBoards.innerHTML = '';
+              for (let layer = 0; layer < 3; layer++) {
+                  const boardDiv = document.createElement('div');
+                  boardDiv.innerHTML = `<h3>第 ${layer + 1} 層</h3>`;
+                  const table = document.createElement('table');
+                  for (let i = 0; i < 3; i++) {
+                      const row = table.insertRow();
+                      for (let j = 0; j < 3; j++) {
+                          const cell = row.insertCell();
+                          cell.textContent = boards[layer][i][j];
+                          cell.className = boards[layer][i][j];
+                          if (winningLines.some(line => line.some(pos => pos[0] === layer && pos[1] === i && pos[2] === j))) {
+                              cell.classList.add('win');
+                          }
+                      }
+                  }
+                  boardDiv.appendChild(table);
+                  finalBoards.appendChild(boardDiv);
+              }
+
+              const coordsDisplay = document.createElement('div');
+              coordsDisplay.innerHTML = '<h3>連線座標</h3>';
+              winningLines.forEach((line, index) => {
+                  const player = boards[line[0][0]][line[0][1]][line[0][2]];
+                  const coords = line.map(pos => `(${pos[0] + 1}, ${pos[1] + 1}, ${pos[2] + 1})`).join(', ');
+                  const lineDisplay = document.createElement('p');
+                  lineDisplay.textContent = `玩家 ${player} 連線 ${index + 1}: ${coords}`;
+                  coordsDisplay.appendChild(lineDisplay);
+              });
+              const explanation = document.createElement('p');
+              explanation.textContent = '座標說明： (層, 行, 列)，0,0,0 是最底層的左上角位置。';
+              coordsDisplay.appendChild(explanation);
+              finalBoards.appendChild(coordsDisplay);
+
+              modal.style.display = 'block';
+          }
+
+        function resetGame() {
+              initializeBoards();
+              currentPlayer = 'X';
+              xLines = 0;
+              oLines = 0;
+              winningLines = []; // 清空贏線資料
+              allWinningLines = []
+              xLinesDisplay.textContent = '0';
+              oLinesDisplay.textContent = '0';
+              updateBoardDisplay();
+              statusDisplay.textContent = `輪到玩家 ${currentPlayer}`;
+              modal.style.display = 'none';
+          }
+      
+        initializeBoards();
+        createBoard();
+        statusDisplay.textContent = `輪到玩家 ${currentPlayer}`;
+    </script>
+</body>
+</html>
